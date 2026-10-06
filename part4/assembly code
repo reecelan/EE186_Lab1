@@ -1,0 +1,70 @@
+#include <stdint.h>
+
+/*
+ * EE186 Lab 1, Part 4: turn on the blue LED (LD2 = PB7)
+ *
+ * Addresses (RM0432):
+ *   RCC base   0x4002 1000 (Table 1, p. 98), AHB2ENR offset 0x4C (Sec. 6.4.17)
+ *   GPIOB base 0x4800 0400 (Table 1, p. 97)
+ *   MODER 0x00, OTYPER 0x04, OSPEEDR 0x08, PUPDR 0x0C, BSRR 0x18 (Sec. 8.4)
+ */
+
+int main(void)
+{
+    __asm__ volatile (
+        ".equ RCC_AHB2ENR,   0x4002104C\n\t"
+        ".equ GPIOB_MODER,   0x48000400\n\t"
+        ".equ GPIOB_OTYPER,  0x48000404\n\t"
+        ".equ GPIOB_OSPEEDR, 0x48000408\n\t"
+        ".equ GPIOB_PUPDR,   0x4800040C\n\t"
+        ".equ GPIOB_BSRR,    0x48000418\n\t"
+
+        /* 1. Enable GPIOB clock: RCC_AHB2ENR |= (1 << 1) */
+        "movw r0, #:lower16:RCC_AHB2ENR\n\t"
+        "movt r0, #:upper16:RCC_AHB2ENR\n\t"
+        "ldr  r1, [r0]\n\t"              /* read current value          */
+        "orr  r1, r1, #(1 << 1)\n\t"     /* set GPIOBEN (bit 1)         */
+        "str  r1, [r0]\n\t"              /* write it back               */
+        "ldr  r1, [r0]\n\t"              /* read back: let clock start  */
+
+        /* 2. PB7 mode = 01 (output): MODER bits [15:14] */
+        "movw r0, #:lower16:GPIOB_MODER\n\t"
+        "movt r0, #:upper16:GPIOB_MODER\n\t"
+        "ldr  r1, [r0]\n\t"
+        "bic  r1, r1, #(3 << 14)\n\t"    /* clear both bits (reset = 11) */
+        "orr  r1, r1, #(1 << 14)\n\t"    /* set to 01                   */
+        "str  r1, [r0]\n\t"
+
+        /* 3. PB7 output type = push-pull: OTYPER bit 7 = 0 */
+        "movw r0, #:lower16:GPIOB_OTYPER\n\t"
+        "movt r0, #:upper16:GPIOB_OTYPER\n\t"
+        "ldr  r1, [r0]\n\t"
+        "bic  r1, r1, #(1 << 7)\n\t"
+        "str  r1, [r0]\n\t"
+
+        /* 4. PB7 speed = low: OSPEEDR bits [15:14] = 00 */
+        "movw r0, #:lower16:GPIOB_OSPEEDR\n\t"
+        "movt r0, #:upper16:GPIOB_OSPEEDR\n\t"
+        "ldr  r1, [r0]\n\t"
+        "bic  r1, r1, #(3 << 14)\n\t"
+        "str  r1, [r0]\n\t"
+
+        /* 5. PB7 no pull-up/pull-down: PUPDR bits [15:14] = 00 */
+        "movw r0, #:lower16:GPIOB_PUPDR\n\t"
+        "movt r0, #:upper16:GPIOB_PUPDR\n\t"
+        "ldr  r1, [r0]\n\t"
+        "bic  r1, r1, #(3 << 14)\n\t"
+        "str  r1, [r0]\n\t"
+
+        /* 6. Drive PB7 high: write (1 << 7) to BSRR -> blue LED on */
+        "movw r0, #:lower16:GPIOB_BSRR\n\t"
+        "movt r0, #:upper16:GPIOB_BSRR\n\t"
+        "mov  r1, #(1 << 7)\n\t"
+        "str  r1, [r0]\n\t"
+        :                       /* no outputs */
+        :                       /* no inputs  */
+        : "r0", "r1", "memory"  /* registers and memory this code changes */
+    );
+
+    while (1);
+}
