@@ -1,0 +1,87 @@
+#include <stdint.h>
+
+/* ---------- RCC ----------
+ * Base address: RM0432 Table 1, p. 98 (RCC: 0x4002 1000)
+ * AHB2ENR offset 0x4C, GPIOBEN = bit 1, GPIOCEN = bit 2: RM0432 Section 6.4.17
+ */
+#define RCC_BASE        0x40021000UL
+#define RCC_AHB2ENR     (*(volatile uint32_t *)(RCC_BASE + 0x4C))
+#define GPIOBEN         (1UL << 1)
+#define GPIOCEN         (1UL << 2)
+
+/* ---------- GPIO ----------
+ * Base addresses: RM0432 Table 1, p. 97 (GPIOB: 0x4800 0400, GPIOC: 0x4800 0800)
+ * Register offsets: RM0432 Section 8.4
+ */
+#define GPIOB_BASE      0x48000400UL
+#define GPIOC_BASE      0x48000800UL
+
+#define GPIO_MODER(base)    (*(volatile uint32_t *)((base) + 0x00))  /* 8.4.1 */
+#define GPIO_OTYPER(base)   (*(volatile uint32_t *)((base) + 0x04))  /* 8.4.2 */
+#define GPIO_OSPEEDR(base)  (*(volatile uint32_t *)((base) + 0x08))  /* 8.4.3 */
+#define GPIO_PUPDR(base)    (*(volatile uint32_t *)((base) + 0x0C))  /* 8.4.4 */
+#define GPIO_BSRR(base)     (*(volatile uint32_t *)((base) + 0x18))  /* 8.4.7 */
+
+/* ---------- LED pins (UM2179 Section 7.6) ---------- */
+#define GREEN_PORT  GPIOC_BASE   /* LD1 = PC7  */
+#define GREEN_PIN   7
+#define BLUE_PORT   GPIOB_BASE   /* LD2 = PB7  */
+#define BLUE_PIN    7
+#define RED_PORT    GPIOB_BASE   /* LD3 = PB14 */
+#define RED_PIN     14
+
+/* Tune this to change blink speed (CPU runs at ~4 MHz after reset) */
+#define DELAY_COUNT 400000UL
+
+/* Configure one pin as a push-pull, low-speed output with no pull resistor */
+static void gpio_config_output(uint32_t port, uint32_t pin)
+{
+    GPIO_MODER(port)   &= ~(3UL << (2 * pin));  /* clear: reset state is 11 (analog) */
+    GPIO_MODER(port)   |=  (1UL << (2 * pin));  /* 01 = general-purpose output       */
+    GPIO_OTYPER(port)  &= ~(1UL << pin);        /* 0  = push-pull                    */
+    GPIO_OSPEEDR(port) &= ~(3UL << (2 * pin));  /* 00 = low speed                    */
+    GPIO_PUPDR(port)   &= ~(3UL << (2 * pin));  /* 00 = no pull-up / pull-down       */
+}
+
+/* BSRR: writing bit n sets pin n high, writing bit n+16 sets pin n low.
+ * Bits written as 0 have no effect, so other pins on the port are untouched. */
+static void led_on(uint32_t port, uint32_t pin)  { GPIO_BSRR(port) = (1UL << pin); }
+static void led_off(uint32_t port, uint32_t pin) { GPIO_BSRR(port) = (1UL << (pin + 16)); }
+
+/* Software delay: volatile keeps the compiler from deleting the loop */
+static void delay(void)
+{
+    volatile uint32_t count = DELAY_COUNT;
+    while (count > 0) {
+        count--;
+    }
+}
+
+int main(void)
+{
+    /* 1. Enable the GPIOB and GPIOC clocks */
+    RCC_AHB2ENR |= GPIOBEN | GPIOCEN;
+    (void)RCC_AHB2ENR;  /* read back so the clock is running before GPIO access */
+
+    /* 2. Configure the three LED pins as outputs */
+    gpio_config_output(GREEN_PORT, GREEN_PIN);
+    gpio_config_output(BLUE_PORT,  BLUE_PIN);
+    gpio_config_output(RED_PORT,   RED_PIN);
+
+    /* 3. Green -> blue -> red, forever */
+    while (1) {
+        led_on(GREEN_PORT, GREEN_PIN);
+        delay();
+
+        led_off(GREEN_PORT, GREEN_PIN);
+        led_on(BLUE_PORT, BLUE_PIN);
+        delay();
+
+        led_off(BLUE_PORT, BLUE_PIN);
+        led_on(RED_PORT, RED_PIN);
+        delay();
+
+        led_off(RED_PORT, RED_PIN);
+    }
+}
+
